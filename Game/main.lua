@@ -49,9 +49,72 @@ KeyboardHolder = {
 		end
 	end,
 }
+
+GamepadHolder = {
+	GpadNumber = 1,
+
+	KeyListeners = {},
+	KeyState = {},
+	Reset = function(o)
+		o.KeyListeners = {}
+		o.KeyState = {}
+	end,
+
+	RegisterListener = function(o,key,callbacks)
+		o.KeyListeners[key] = callbacks
+	end,
+
+	IsKeyPressed = function(o,key)
+		local joystick = love.joystick.getJoysticks()[o.GpadNumber]
+		return joystick:isGamepadDown(key)
+	end,
+
+	Update = function(o)
+		local joystick = love.joystick.getJoysticks()[o.GpadNumber]
+		for key,callbacks in pairs(o.KeyListeners) do
+			local ns = joystick:isGamepadDown(key)
+			local ls = o.KeyState[key]
+			if ns and not ls then
+				o.KeyState[key] = true
+				if callbacks.OnPress then
+					callbacks.OnPress()
+				end
+			elseif not ns and ls then
+				o.KeyState[key] = false
+				if callbacks.OnRelease then
+					callbacks.OnRelease()
+				end
+			end
+		end
+	end,	
+}
+
+
 Camera = {
+	ShakeForce = false,
+	ShakeVector = vector(0,0),
+	Time = 0,
+
 	GetPosition = function(o,pos)
-		return vector(pos.x,pos.y * -1 + WindowSize[2])
+		local bias = o.ShakeForce and o.ShakeVector or vector(0,0)
+
+		return vector(pos.x,pos.y * -1 + WindowSize[2]) + bias
+	end,
+
+	Update = function(o,dt)
+		if o.ShakeForce then
+			o.Time = o.Time + dt * 80
+			o.ShakeVector = vector(math.sin(o.Time),math.cos(o.Time)) * o.ShakeForce
+			o.ShakeForce = damping(.35,o.ShakeForce,0,dt)
+			if o.ShakeForce < .2 then
+				o.ShakeForce = false
+			end
+		end
+	end,
+
+	Impulse = function(o)
+		o.ShakeForce = 4
+		o.Time = 0
 	end,
 }
 
@@ -96,6 +159,42 @@ Controler = {
 					o.AttackAsked = false
 				end,
 			})
+
+		-- GPAD
+		GamepadHolder:RegisterListener("dpright",{
+				OnPress = function()
+					o.DirectionAsked = o.DirectionAsked + 1
+				end,
+				OnRelease = function()
+					o.DirectionAsked = o.DirectionAsked - 1
+				end,
+			})
+		GamepadHolder:RegisterListener("dpleft",{
+				OnPress = function()
+					o.DirectionAsked = o.DirectionAsked - 1
+				end,
+				OnRelease = function()
+					o.DirectionAsked = o.DirectionAsked + 1
+				end,
+			})
+
+		GamepadHolder:RegisterListener("a",{
+				OnPress = function()
+					o.JumpAsked = true
+				end,
+				OnRelease = function()
+					o.JumpAsked = false
+				end,
+			})
+
+		GamepadHolder:RegisterListener("x",{
+				OnPress = function()
+					o.AttackAsked = true
+				end,
+				OnRelease = function()
+					o.AttackAsked = false
+				end,
+			})
 	end,
 }
 
@@ -118,7 +217,7 @@ Character = {
 	HorizontalVelocity = 150,
 	JumpImpulse = 200,
 
-	AttackRate = .7,
+	AttackRate = .5,
 	AttackRange = 90,
 
 	IsOnGround = function(o)
@@ -130,6 +229,7 @@ Character = {
 		if target and distance < o.AttackRange then
 			table.remove(Projectiles,target)
 			o.NBJump = o.NBJumpOnGround
+			Camera:Impulse()
 		end
 	end,
 
@@ -199,10 +299,13 @@ Character = {
 	end,
 
 	Draw = function(o)
-		local cColor = o.CharacterColors[o.NBJump + 1]
-		
-		love.graphics.setColor(unpack(cColor))
 		local position = Camera:GetPosition(o.Position)
+		local attackZone = {25,25,25}
+		love.graphics.setColor(unpack(attackZone))
+		love.graphics.circle("fill",position.x,position.y,o.AttackRange - 5)
+
+		local cColor = o.CharacterColors[o.NBJump + 1]
+		love.graphics.setColor(unpack(cColor))
 		love.graphics.circle("fill",position.x,position.y,o.Size)
 	end,
 }
@@ -323,7 +426,9 @@ love.update = function(dt)
   		love.event.push('quit')
 	end
 
-	KeyboardHolder:Update()
+	KeyboardHolder:Update(dt)
+	GamepadHolder:Update(dt)
+	Camera:Update(dt)
 	Character:Update(dt)
 	
 	ProjectileManager:Update(dt)
