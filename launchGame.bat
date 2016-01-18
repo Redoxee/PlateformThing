@@ -1,1 +1,3 @@
-"C:\Program Files\LOVE\love.exe" "C:\Users\Anton\Documents\git\PlateformThing\Game"
+SET mypath=%~dp0
+cd %mypath:~0,-1%
+"..\Love2D\love.exe" "Game"
