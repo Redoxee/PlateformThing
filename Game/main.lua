@@ -1,9 +1,21 @@
 vector = require "Utils.HUMP.vector"
 
 WindowSize = {800,800} 
+TIME_FACTOR = .25
 
+math.sign = math.sign or function(x) return x<0 and -1 or x>0 and 1 or 0 end
 function damping(f,p,t,dt)
     return p + ((t - p) / f * dt)
+end
+function getBias(time,bias)
+  return (time / ((((1.0/bias) - 2.0)*(1.0 - time))+1.0));
+end
+function getGain(time,gain)
+  	if(time < 0.5) then
+    	return getBias(time * 2.0,gain)/2.0;
+ 	else
+    	return getBias(time * 2.0 - 1.0,1.0 - gain)/2.0 + 0.5;
+	end
 end
 
 Gravity = vector(0,-300)
@@ -13,6 +25,8 @@ FloorFriction = .1
 love.load = function()
 	love.window.setMode(WindowSize[1], WindowSize[2])
 	Controler:Initialize()
+	SlashAnimation:Initialize()
+	RechargeGaugeManager:Initialize()
 end
 
 KeyboardHolder = {
@@ -66,23 +80,27 @@ GamepadHolder = {
 
 	IsKeyPressed = function(o,key)
 		local joystick = love.joystick.getJoysticks()[o.GpadNumber]
-		return joystick:isGamepadDown(key)
+		if joystick then
+			return joystick:isGamepadDown(key)
+		end
 	end,
 
 	Update = function(o)
 		local joystick = love.joystick.getJoysticks()[o.GpadNumber]
-		for key,callbacks in pairs(o.KeyListeners) do
-			local ns = joystick:isGamepadDown(key)
-			local ls = o.KeyState[key]
-			if ns and not ls then
-				o.KeyState[key] = true
-				if callbacks.OnPress then
-					callbacks.OnPress()
-				end
-			elseif not ns and ls then
-				o.KeyState[key] = false
-				if callbacks.OnRelease then
-					callbacks.OnRelease()
+		if joystick then
+			for key,callbacks in pairs(o.KeyListeners) do
+				local ns = joystick:isGamepadDown(key)
+				local ls = o.KeyState[key]
+				if ns and not ls then
+					o.KeyState[key] = true
+					if callbacks.OnPress then
+						callbacks.OnPress()
+					end
+				elseif not ns and ls then
+					o.KeyState[key] = false
+					if callbacks.OnRelease then
+						callbacks.OnRelease()
+					end
 				end
 			end
 		end
@@ -225,29 +243,37 @@ Character = {
 	end,
 
 	Hit = function(o)
-		local target, distance = o:GetClosestProjectile()
+		local target, distance, direction = o:GetClosestProjectile()
+		o.AttackTimer = o.AttackRate
 		if target and distance < o.AttackRange then
 			table.remove(Projectiles,target)
 			o.NBJump = o.NBJumpOnGround
 			Camera:Impulse()
+
+			print(tostring(direction))
+			direction = direction:normalized() * -1
+			local angle = math.acos(direction.x) * math.sign(direction.y) * 2 --+ (math.pi / 2)
+			--SlashAnimation:StartAnimation(o.Position,angle )
 		end
 	end,
 
 	GetClosestProjectile = function(o)
 		local closestTarget = Projectiles[1]
 		if closestTarget then
-			local cPos = o.Position
-			local currentLenght = (closestTarget.Position - cPos):len()
+			local characterPosition = o.Position
+			local direction = (characterPosition - closestTarget.Position)
+			local currentLenght = direction:len()
 			local index = 1
 			for i = 2, #Projectiles do
 				pPos = Projectiles[i].Position
-				local l = (pPos - cPos):len()
+				direction = (characterPosition - pPos)
+				local l = direction:len()
 				if l < currentLenght then
 					index = i
 					currentLenght = l
 				end
 			end
-			return index, currentLenght
+			return index, currentLenght, direction
 		end
 	end,
 
@@ -291,7 +317,6 @@ Character = {
 			end
 		end
 		if Controler.AttackAsked and not o.AttackTimer then
-			o.AttackTimer = o.AttackRate
 			o.HasHit = false
 			o:Hit()
 			o.HasHit = true
@@ -300,10 +325,7 @@ Character = {
 
 	Draw = function(o)
 		local position = Camera:GetPosition(o.Position)
-		local attackZone = {25,25,25}
-		love.graphics.setColor(unpack(attackZone))
-		love.graphics.circle("fill",position.x,position.y,o.AttackRange - 5)
-
+		
 		local cColor = o.CharacterColors[o.NBJump + 1]
 		love.graphics.setColor(unpack(cColor))
 		love.graphics.circle("fill",position.x,position.y,o.Size)
@@ -421,16 +443,99 @@ ProjectileLauncher = {
 
 }
 
+SlashAnimation = {
+	Textures = {
+		"Media/Slash/slash1.png",
+		"Media/Slash/slash2.png",
+		"Media/Slash/slash3.png",
+		"Media/Slash/slash4.png",
+		"Media/Slash/slash5.png",
+		"Media/Slash/slash6.png",
+		"Media/Slash/slash1.png",
+	},
+	AnimationAccumulator = false,
+	CurrentTexture = false,
+	AnimationTime = .25,
+	AnimationGain = .18,
+	Position = vector(0,0),
+	Orientation = 0,
+
+	Initialize = function(o)
+		for i = 1,#o.Textures do
+			o.Textures[i] = love.graphics.newImage(o.Textures[i])
+		end
+	end,
+
+	Update = function(o,dt)
+		if o.AnimationAccumulator then
+			o.AnimationAccumulator = o.AnimationAccumulator + dt
+			if o.AnimationAccumulator > o.AnimationTime then
+				o.AnimationAccumulator = false
+				return
+			end
+			local progression = o.AnimationAccumulator / o.AnimationTime
+			progression = getGain(progression,o.AnimationGain)
+			o.CurrentTexture = o.Textures[math.floor(progression * #o.Textures) + 1]
+		end
+	end,
+
+	Draw = function(o)
+		if o.AnimationAccumulator then
+			love.graphics.draw(o.CurrentTexture,o.Position.x,o.Position.y,o.Orientation,1,1,o.CurrentTexture:getWidth()/2,o.CurrentTexture:getHeight())
+		end
+	end,
+
+	StartAnimation = function(o,pos,orientation)
+		o.Position = Camera:GetPosition(pos:clone())
+		o.Orientation = orientation
+		o.AnimationAccumulator = 0
+	end,
+}
+
+
+RechargeGaugeManager = {
+	GaugeShader = "Media/Shader/RechargeGauge.shader",
+	GaugeQuad = false,
+	GaugeImage = false,
+	Size = Character.AttackRange - 5,
+	GaugeColor = {25,25,25},
+	Initialize = function(o)
+		o.GaugeShader = love.graphics.newShader(o.GaugeShader)
+		local s = o.Size*2
+		o.GaugeQuad = love.graphics.newQuad(0,0,s,s,s,s)
+		o.GaugeImage = love.graphics.newImage("Media/White.png")
+	end,
+
+	Draw = function(o)
+		local pos = Camera:GetPosition(Character.Position)
+		love.graphics.setColor(unpack(o.GaugeColor))
+		if Character.AttackTimer then
+			local pos = Camera:GetPosition(Character.Position - vector(o.Size,-o.Size))
+			love.graphics.setShader(o.GaugeShader)
+			o.GaugeShader:send("progression",1 - Character.AttackTimer / Character.AttackRate)
+			love.graphics.draw(o.GaugeImage, o.GaugeQuad,pos.x,pos.y)
+			love.graphics.setShader()
+		else
+			love.graphics.circle("fill",pos.x,pos.y,o.Size)
+		end
+	end,
+}
+
+GUI = {
+	Draw = function(o)
+	end,
+}
 love.update = function(dt)
 	if love.keyboard.isDown("escape") then
   		love.event.push('quit')
 	end
+	dt = dt * TIME_FACTOR
 
 	KeyboardHolder:Update(dt)
 	GamepadHolder:Update(dt)
 	Camera:Update(dt)
 	Character:Update(dt)
-	
+	SlashAnimation:Update(dt)
 	ProjectileManager:Update(dt)
 	ProjectileLauncher:Update(dt)
 end
@@ -438,7 +543,9 @@ end
 love.draw = function()
 	love.graphics.clear()
 
+	RechargeGaugeManager:Draw()
 	Character:Draw()
 	ProjectileManager:Draw()
 	ProjectileLauncher:Draw()
+	SlashAnimation:Draw()
 end
