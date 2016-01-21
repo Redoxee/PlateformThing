@@ -1,7 +1,9 @@
 vector = require "Utils.HUMP.vector"
 
 WindowSize = {800,800} 
-TIME_FACTOR = .25
+TIME_FACTOR = .3
+
+math.randomseed( tonumber(tostring(os.time()):reverse():sub(1,6)) )
 
 math.sign = math.sign or function(x) return x<0 and -1 or x>0 and 1 or 0 end
 function damping(f,p,t,dt)
@@ -18,15 +20,14 @@ function getGain(time,gain)
 	end
 end
 
-Gravity = vector(0,-300)
+Gravity = vector(0,-700)
 FloorHeight = 0
 FloorFriction = .1
 
 love.load = function()
 	love.window.setMode(WindowSize[1], WindowSize[2])
-	Controler:Initialize()
-	SlashAnimation:Initialize()
-	RechargeGaugeManager:Initialize()
+
+	GameStateManager:SetState("Gameplay")
 end
 
 KeyboardHolder = {
@@ -233,27 +234,47 @@ Character = {
 	Size = 15,
 	NBJumpOnGround = 2,
 	HorizontalVelocity = 150,
-	JumpImpulse = 200,
+	JumpImpulse = 350,
 
 	AttackRate = .5,
 	AttackRange = 90,
+
+	LifePoint = 10,
+	InvincibilityTimer = false,
+	InvincibilityTime = 1.5,
+	BlinkFrequency = 9,
 
 	IsOnGround = function(o)
 		return o.Position.y < (FloorHeight + o.Size)
 	end,
 
 	Hit = function(o)
-		local target, distance, direction = o:GetClosestProjectile()
 		o.AttackTimer = o.AttackRate
-		if target and distance < o.AttackRange then
-			table.remove(Projectiles,target)
+
+		local hasHit = false
+		local direction =(ProjectileLauncher.Position - o.Position) 
+		local distance = direction:len()
+		print(tostring(distance))
+		if distance < o.AttackRange then
+			hasHit = ProjectileLauncher:Hit()
+		end
+		if not hasHit then
+			local target
+			target, distance, direction = o:GetClosestProjectile()
+			if target and distance < o.AttackRange then
+				table.remove(Projectiles,target)
+				hasHit = true
+			end
+		end
+
+		if hasHit then
 			o.NBJump = o.NBJumpOnGround
 			Camera:Impulse()
 
-			print(tostring(direction))
+			--print(tostring(direction))
 			direction = direction:normalized() * -1
 			local angle = math.acos(direction.x) * math.sign(direction.y) * 2 --+ (math.pi / 2)
-			--SlashAnimation:StartAnimation(o.Position,angle )
+			SlashAnimation:StartAnimation(o.Position,angle )
 		end
 	end,
 
@@ -321,14 +342,33 @@ Character = {
 			o:Hit()
 			o.HasHit = true
 		end
+
+		local closestProjectile,distance = o:GetClosestProjectile()
+		if closestProjectile and not o.InvincibilityTimer and distance < (o.Size + Projectiles[closestProjectile].Size) then
+			o.LifePoint = math.max(o.LifePoint - 1,0)
+			table.remove(Projectiles,closestProjectile)
+			Camera:Impulse()
+			o.InvincibilityTimer = o.InvincibilityTime
+			o.AttackTimer = o.AttackRate
+		elseif o.InvincibilityTimer then
+			o.InvincibilityTimer = o.InvincibilityTimer - dt
+			if o.InvincibilityTimer <= 0 then
+				o.InvincibilityTimer = false
+			end
+		end
 	end,
 
 	Draw = function(o)
-		local position = Camera:GetPosition(o.Position)
-		
-		local cColor = o.CharacterColors[o.NBJump + 1]
-		love.graphics.setColor(unpack(cColor))
-		love.graphics.circle("fill",position.x,position.y,o.Size)
+		local visible = true
+		if o.InvincibilityTimer and math.cos(math.pi * o.BlinkFrequency * o.InvincibilityTimer) < 0 then
+			visible = false
+		end
+		if visible then
+			local position = Camera:GetPosition(o.Position)
+			local cColor = o.CharacterColors[o.NBJump + 1]
+			love.graphics.setColor(unpack(cColor))
+			love.graphics.circle("fill",position.x,position.y,o.Size)
+		end
 	end,
 }
 
@@ -403,12 +443,18 @@ ProjectileManager = {
 ProjectileLauncher = {
 	Position = vector(400,700),
 	Direction = 1,
-	Speed = 100,
+	Speed = 130,
 
 	FireRate = .8,
 	Range = math.pi * 0.7,
 	ShootForceRange = 300,
 	MinShootForce = 150,
+
+	LifePoint = 10,
+
+	InvincibilityTime = 4,
+	InvincibilityTimer = false,
+	BlinkFrequency = 10,
 
 	Timer = 1,
 	Update = function(o,dt)
@@ -431,14 +477,37 @@ ProjectileLauncher = {
 
 			ProjectileManager:AddProjectile({Position = o.Position, Velocity = v})
 		end
+
+		if o.InvincibilityTimer then
+			o.InvincibilityTimer = o.InvincibilityTimer - dt
+			if o.InvincibilityTimer <= 0 then
+				o.InvincibilityTimer = false
+			end
+		end
 	end,
+
+	Hit = function(o)
+		if not o.InvincibilityTimer then
+			o.LifePoint = math.max(0,o.LifePoint - 1)
+			o.InvincibilityTimer = o.InvincibilityTime
+			return true
+		end
+	end,
+
 	Size = vector(100,65),
 	Color = {251,108,153},
 	Draw = function(o)
-		local pos = Camera:GetPosition(o.Position)
-		pos = pos - (o.Size/2)
-		love.graphics.setColor(unpack(o.Color))
-		love.graphics.rectangle("fill",pos.x,pos.y,o.Size.x,o.Size.y)
+		local visible = true
+		if o.InvincibilityTimer then
+			visible = math.cos(math.pi * o.InvincibilityTimer * o.BlinkFrequency) < 0
+		end
+
+		if visible then
+			local pos = Camera:GetPosition(o.Position)
+			pos = pos - (o.Size/2)
+			love.graphics.setColor(unpack(o.Color))
+			love.graphics.rectangle("fill",pos.x,pos.y,o.Size.x,o.Size.y)
+		end
 	end,
 
 }
@@ -455,7 +524,7 @@ SlashAnimation = {
 	},
 	AnimationAccumulator = false,
 	CurrentTexture = false,
-	AnimationTime = .25,
+	AnimationTime = .5,
 	AnimationGain = .18,
 	Position = vector(0,0),
 	Orientation = 0,
@@ -522,30 +591,103 @@ RechargeGaugeManager = {
 }
 
 GUI = {
+	PlayerLifePosition = vector(750,750),
+	PlayerLifeColor = {25,255,25},
+	
+	BossLifePosition = vector(750,20),
+	BossLifeColor = {245,30,65},
+
+	Update = function(o,dt)
+	end,
+
 	Draw = function(o)
+		local cellSize = vector(45,30)
+		if Character.LifePoint > 0 then
+			local currentPose = o.PlayerLifePosition:clone()
+			love.graphics.setColor(unpack(o.PlayerLifeColor))
+
+			for i = 1, Character.LifePoint do
+				love.graphics.rectangle("fill",currentPose.x,currentPose.y,cellSize.x,cellSize.y)
+				currentPose.y = currentPose.y - cellSize.y - 5
+			end
+		end
+
+		if ProjectileLauncher.LifePoint > 0 then
+			local currentPose = o.BossLifePosition:clone()
+			love.graphics.setColor(unpack(o.BossLifeColor))
+			for i = 1,ProjectileLauncher.LifePoint do
+				love.graphics.rectangle("fill",currentPose.x,currentPose.y,cellSize.x,cellSize.y)
+				currentPose.y = currentPose.y + cellSize.y + 5
+			end
+		end
 	end,
 }
+
+GameStateManager = {
+	CurrentState = false,
+	States = {},
+
+	SetState = function(o,state)
+		if o.States[state] then
+			if o.CurrentState and o.States[o.CurrentState].OnEnd then
+				o.States[o.CurrentState].OnEnd()
+			end
+			if o.States[state].OnStart then
+				o.States[state].OnStart()
+			end
+			o.CurrentState = state
+		end
+	end,
+
+	Update = function(o,dt)
+		if o.States[o.CurrentState].OnUpdate then
+			o.States[o.CurrentState].OnUpdate(dt)
+		end
+	end,
+
+	Draw = function(o)
+		if o.States[o.CurrentState].OnDraw then
+			o.States[o.CurrentState].OnDraw()
+		end
+	end,
+}
+
+GameplayState = {
+	OnStart = function()
+		Controler:Initialize()
+		SlashAnimation:Initialize()
+		RechargeGaugeManager:Initialize()
+	end,
+	OnUpdate = function(dt)
+		KeyboardHolder:Update(dt)
+		GamepadHolder:Update(dt)
+		Camera:Update(dt)
+		Character:Update(dt)
+		SlashAnimation:Update(dt)
+		ProjectileManager:Update(dt)
+		ProjectileLauncher:Update(dt)
+		GUI:Update(dt)
+	end,
+	OnDraw = function()
+		love.graphics.clear()
+		RechargeGaugeManager:Draw()
+		Character:Draw()
+		ProjectileManager:Draw()
+		ProjectileLauncher:Draw()
+		SlashAnimation:Draw()
+		GUI:Draw()
+	end,
+}
+GameStateManager.States["Gameplay"] = GameplayState
+
 love.update = function(dt)
 	if love.keyboard.isDown("escape") then
   		love.event.push('quit')
 	end
 	dt = dt * TIME_FACTOR
-
-	KeyboardHolder:Update(dt)
-	GamepadHolder:Update(dt)
-	Camera:Update(dt)
-	Character:Update(dt)
-	SlashAnimation:Update(dt)
-	ProjectileManager:Update(dt)
-	ProjectileLauncher:Update(dt)
+	GameStateManager:Update(dt)
 end
 
 love.draw = function()
-	love.graphics.clear()
-
-	RechargeGaugeManager:Draw()
-	Character:Draw()
-	ProjectileManager:Draw()
-	ProjectileLauncher:Draw()
-	SlashAnimation:Draw()
+	GameStateManager:Draw()
 end
