@@ -1,7 +1,7 @@
 vector = require "Utils.HUMP.vector"
 
 WindowSize = {800,800} 
-TIME_FACTOR = .3
+TIME_FACTOR = 1
 
 math.randomseed( tonumber(tostring(os.time()):reverse():sub(1,6)) )
 
@@ -26,8 +26,11 @@ FloorFriction = .1
 
 love.load = function()
 	love.window.setMode(WindowSize[1], WindowSize[2])
+	IntroState:Load()
+	SlashAnimation:Load()
+	RechargeGaugeManager:Load()
 
-	GameStateManager:SetState("Gameplay")
+	GameStateManager:SetState("Intro")
 end
 
 KeyboardHolder = {
@@ -144,6 +147,11 @@ Controler = {
 	AttackAsked = false,
 	
 	Initialize = function(o)
+
+		o.JumpAsked = false
+		o.DirectionAsked = 0
+		o.AttackAsked = false
+
 		KeyboardHolder:RegisterListener("right",{
 				OnPress = function()
 					o.DirectionAsked = o.DirectionAsked + 1
@@ -239,10 +247,21 @@ Character = {
 	AttackRate = .5,
 	AttackRange = 90,
 
-	LifePoint = 10,
+	LifePoint = 5,
 	InvincibilityTimer = false,
 	InvincibilityTime = 1.5,
 	BlinkFrequency = 9,
+
+	Initialize = function(o)
+		o.Position = vector(100,100)
+		o.Velocity = vector(0,0)
+		o.NBJump = 2
+		o.JumpConsumed = false
+		o.AttackTimer = false
+		o.HasHit = false
+		o.InvincibilityTimer = false
+		o.LifePoint = 5
+	end,
 
 	IsOnGround = function(o)
 		return o.Position.y < (FloorHeight + o.Size)
@@ -275,6 +294,8 @@ Character = {
 			direction = direction:normalized() * -1
 			local angle = math.acos(direction.x) * math.sign(direction.y) * 2 --+ (math.pi / 2)
 			SlashAnimation:StartAnimation(o.Position,angle )
+
+			GameplayState:NotifyHit()
 		end
 	end,
 
@@ -350,6 +371,7 @@ Character = {
 			Camera:Impulse()
 			o.InvincibilityTimer = o.InvincibilityTime
 			o.AttackTimer = o.AttackRate
+			GameplayState:NotifyHit()
 		elseif o.InvincibilityTimer then
 			o.InvincibilityTimer = o.InvincibilityTimer - dt
 			if o.InvincibilityTimer <= 0 then
@@ -443,20 +465,31 @@ ProjectileManager = {
 ProjectileLauncher = {
 	Position = vector(400,700),
 	Direction = 1,
-	Speed = 130,
+	Speed = 80,
 
-	FireRate = .8,
-	Range = math.pi * 0.7,
+	FireRate = 1.1,
+	Range = math.pi * 0.75,
 	ShootForceRange = 300,
-	MinShootForce = 150,
+	MinShootForce = 160,
 
-	LifePoint = 10,
+	LifePoint = 6,
 
 	InvincibilityTime = 4,
 	InvincibilityTimer = false,
 	BlinkFrequency = 10,
 
 	Timer = 1,
+
+	Initialize = function(o)
+
+		o.Position = vector(400,700)
+		o.Direction = 1
+		o.InvincibilityTimer = false
+		o.Timer = 1
+		o.LifePoint = 6
+		Projectiles = {}
+	end,
+
 	Update = function(o,dt)
 		o.Position.x = o.Position.x + o.Speed * dt * o.Direction
 		if o.Position.x < 0 then
@@ -529,10 +562,13 @@ SlashAnimation = {
 	Position = vector(0,0),
 	Orientation = 0,
 
-	Initialize = function(o)
+	Load = function(o)
 		for i = 1,#o.Textures do
 			o.Textures[i] = love.graphics.newImage(o.Textures[i])
 		end
+	end,
+
+	Initialize = function(o)
 	end,
 
 	Update = function(o,dt)
@@ -568,11 +604,15 @@ RechargeGaugeManager = {
 	GaugeImage = false,
 	Size = Character.AttackRange - 5,
 	GaugeColor = {25,25,25},
-	Initialize = function(o)
+
+	Load = function(o)
 		o.GaugeShader = love.graphics.newShader(o.GaugeShader)
 		local s = o.Size*2
 		o.GaugeQuad = love.graphics.newQuad(0,0,s,s,s,s)
 		o.GaugeImage = love.graphics.newImage("Media/White.png")
+	end,
+
+	Initialize = function(o)
 	end,
 
 	Draw = function(o)
@@ -630,10 +670,10 @@ GameStateManager = {
 	SetState = function(o,state)
 		if o.States[state] then
 			if o.CurrentState and o.States[o.CurrentState].OnEnd then
-				o.States[o.CurrentState].OnEnd()
+				o.States[o.CurrentState]:OnEnd()
 			end
 			if o.States[state].OnStart then
-				o.States[state].OnStart()
+				o.States[state]:OnStart()
 			end
 			o.CurrentState = state
 		end
@@ -641,24 +681,28 @@ GameStateManager = {
 
 	Update = function(o,dt)
 		if o.States[o.CurrentState].OnUpdate then
-			o.States[o.CurrentState].OnUpdate(dt)
+			o.States[o.CurrentState]:OnUpdate(dt)
 		end
 	end,
 
 	Draw = function(o)
 		if o.States[o.CurrentState].OnDraw then
-			o.States[o.CurrentState].OnDraw()
+			o.States[o.CurrentState]:OnDraw()
 		end
 	end,
 }
 
 GameplayState = {
-	OnStart = function()
+	OnStart = function(o)
+		KeyboardHolder:Reset()
+		GamepadHolder:Reset()
 		Controler:Initialize()
 		SlashAnimation:Initialize()
 		RechargeGaugeManager:Initialize()
+		Character:Initialize()
+		ProjectileLauncher:Initialize()
 	end,
-	OnUpdate = function(dt)
+	OnUpdate = function(o,dt)
 		KeyboardHolder:Update(dt)
 		GamepadHolder:Update(dt)
 		Camera:Update(dt)
@@ -668,7 +712,7 @@ GameplayState = {
 		ProjectileLauncher:Update(dt)
 		GUI:Update(dt)
 	end,
-	OnDraw = function()
+	OnDraw = function(o)
 		love.graphics.clear()
 		RechargeGaugeManager:Draw()
 		Character:Draw()
@@ -677,8 +721,76 @@ GameplayState = {
 		SlashAnimation:Draw()
 		GUI:Draw()
 	end,
+
+	NotifyHit = function(o)
+		if Character.LifePoint == 0 or ProjectileLauncher.LifePoint == 0 then
+			GameStateManager:SetState("GameOver")
+		end
+	end,
 }
 GameStateManager.States["Gameplay"] = GameplayState
+
+IntroState = {
+	TitleImage = false,
+	StartText = "Press START or SPACE to fight !",
+
+	Load = function(o)
+		o.TitleImage = love.graphics.newImage("Media/JumpSlashJump.png")
+	end,
+
+	OnStart = function(o)
+		KeyboardHolder:Reset()
+		GamepadHolder:Reset()
+
+		KeyboardHolder:RegisterListener(" ",{OnPress =function() GameStateManager:SetState("Gameplay") end})
+		GamepadHolder:RegisterListener("start",{OnPress =function() GameStateManager:SetState("Gameplay") end})
+	end,
+
+	OnUpdate = function(o)
+		KeyboardHolder:Update()
+		GamepadHolder:Update()
+	end,
+
+
+	OnDraw = function(o)
+		love.graphics.draw(o.TitleImage, (WindowSize[1] - o.TitleImage:getWidth()) / 2 ,50)
+
+		love.graphics.setColor(255,255,255)
+		love.graphics.print(o.StartText, 300 ,700)
+	end,
+}
+GameStateManager.States["Intro"] = IntroState
+
+GameOverState = {
+	WinMessage = "Congratulation you win this time but the next fight will be mine !",
+	LooseMessage = "I Am the winner of this clash ! You loose !",
+	
+	OnStart = function(o)
+		KeyboardHolder:Reset()
+		GamepadHolder:Reset()
+
+		KeyboardHolder:RegisterListener("r",{OnPress = function() GameStateManager:SetState("Intro") end})
+		GamepadHolder:RegisterListener("back",{OnPress =function() GameStateManager:SetState("Intro") end})
+	end,
+
+
+	OnDraw = function(o)
+		local hasWin = Character.LifePoint > 0 and ProjectileLauncher.LifePoint < 1 
+		local endMessage = hasWin and o.WinMessage or o.LooseMessage
+									  
+		love.graphics.setColor(255,255,255)
+		love.graphics.print(endMessage, 250 ,200) 
+
+
+		love.graphics.print("R or Back to go to Title", 300 ,700)
+
+	end,
+	OnUpdate = function(o)
+		KeyboardHolder:Update()
+		GamepadHolder:Update()
+	end,
+}
+GameStateManager.States["GameOver"] = GameOverState
 
 love.update = function(dt)
 	if love.keyboard.isDown("escape") then
