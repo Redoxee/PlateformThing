@@ -187,6 +187,11 @@ function vector:trimmed(maxLen)
 end
 
 
+function vector:dot(v)
+	assert(isvector(v) , "dot : wrong argument types (<vector> expected)")
+	return self.x * v.x + self.y * v.y
+end
+
 -- the module
 return setmetatable({new = new, isvector = isvector, zero = zero},
 {__call = function(_, ...) return new(...) end})

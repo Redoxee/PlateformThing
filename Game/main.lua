@@ -273,7 +273,6 @@ Character = {
 		local hasHit = false
 		local direction =(ProjectileLauncher.Position - o.Position) 
 		local distance = direction:len()
-		print(tostring(distance))
 		if distance < o.AttackRange then
 			hasHit = ProjectileLauncher:Hit()
 		end
@@ -290,10 +289,10 @@ Character = {
 			o.NBJump = o.NBJumpOnGround
 			Camera:Impulse()
 
-			--print(tostring(direction))
-			direction = direction:normalized() * -1
-			local angle = math.acos(direction.x) * math.sign(direction.y) * 2 --+ (math.pi / 2)
+			direction = direction:normalized()
+			local angle = math.acos(direction:dot(vector(0,1))) * math.sign(direction.x)
 			SlashAnimation:StartAnimation(o.Position,angle )
+			print("angle : " .. angle / (math.pi* 2) * 360)
 
 			GameplayState:NotifyHit()
 		end
@@ -303,12 +302,12 @@ Character = {
 		local closestTarget = Projectiles[1]
 		if closestTarget then
 			local characterPosition = o.Position
-			local direction = (characterPosition - closestTarget.Position)
+			local direction = (closestTarget.Position - characterPosition)
 			local currentLenght = direction:len()
 			local index = 1
 			for i = 2, #Projectiles do
 				pPos = Projectiles[i].Position
-				direction = (characterPosition - pPos)
+				direction = (pPos - characterPosition)
 				local l = direction:len()
 				if l < currentLenght then
 					index = i
@@ -467,7 +466,7 @@ ProjectileLauncher = {
 	Direction = 1,
 	Speed = 80,
 
-	FireRate = 1.1,
+	FireRate = .25,
 	Range = math.pi * 0.75,
 	ShootForceRange = 300,
 	MinShootForce = 160,
@@ -692,6 +691,24 @@ GameStateManager = {
 	end,
 }
 
+DebugAnimation = {
+	WasPressed = false,
+	Update = function(o)
+		local ns  = love.mouse.isDown("l")
+		if ns and not o.WasPressed then
+			o:onClick()
+		end
+		o.WasPressed = ns
+	end,
+	onClick = function(o)
+		local p = vector(400,400)
+		local position = vector(love.mouse.getX(),love.mouse.getY())
+		local direction = (position - p):normalized()
+		local angle = math.acos(direction:dot(vector(0,-1))) * math.sign(direction.x) 
+		SlashAnimation:StartAnimation(p,angle)
+	end,
+}
+
 GameplayState = {
 	OnStart = function(o)
 		KeyboardHolder:Reset()
@@ -707,6 +724,7 @@ GameplayState = {
 		GamepadHolder:Update(dt)
 		Camera:Update(dt)
 		Character:Update(dt)
+		DebugAnimation:Update(dt)
 		SlashAnimation:Update(dt)
 		ProjectileManager:Update(dt)
 		ProjectileLauncher:Update(dt)
