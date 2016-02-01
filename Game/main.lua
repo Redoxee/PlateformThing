@@ -466,7 +466,7 @@ ProjectileLauncher = {
 	Direction = 1,
 	Speed = 80,
 
-	FireRate = .25,
+	FireRate = .5,
 	Range = math.pi * 0.75,
 	ShootForceRange = 300,
 	MinShootForce = 160,
@@ -750,10 +750,12 @@ GameStateManager.States["Gameplay"] = GameplayState
 
 IntroState = {
 	TitleImage = false,
+	ControlsImage = false,
 	StartText = "Press START or SPACE to fight !",
 
 	Load = function(o)
 		o.TitleImage = love.graphics.newImage("Media/JumpSlashJump.png")
+		o.ControlsImage = love.graphics.newImage("Media/Controls.png")
 	end,
 
 	OnStart = function(o)
@@ -773,6 +775,8 @@ IntroState = {
 	OnDraw = function(o)
 		love.graphics.draw(o.TitleImage, (WindowSize[1] - o.TitleImage:getWidth()) / 2 ,50)
 
+		love.graphics.draw(o.ControlsImage, (WindowSize[1] - o.ControlsImage:getWidth()) / 2 ,330)
+
 		love.graphics.setColor(255,255,255)
 		love.graphics.print(o.StartText, 300 ,700)
 	end,
@@ -780,8 +784,8 @@ IntroState = {
 GameStateManager.States["Intro"] = IntroState
 
 GameOverState = {
-	WinMessage = "Congratulation you win this time but the next fight will be mine !",
-	LooseMessage = "I Am the winner of this clash ! You loose !",
+	WinMessage = "Congratulation you win this time !",
+	LooseMessage = "I Am the winner of this game ! You loose !",
 	
 	OnStart = function(o)
 		KeyboardHolder:Reset()
