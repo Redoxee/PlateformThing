@@ -24,9 +24,19 @@ Gravity = vector(0,-700)
 FloorHeight = 0
 FloorFriction = .1
 
+PixelFont = false
+
 love.load = function()
 	love.window.setMode(WindowSize[1], WindowSize[2])
+	PixelFont = love.graphics.newImageFont("Media/Fonts/fontwiki.png",
+    " abcdefghijklmnopqrstuvwxyz" ..
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0" ..
+    "123456789.,!?-+/():;%&`'*#=[]\"")
+    love.graphics.setFont(PixelFont)
+
 	IntroState:Load()
+	InfosState:Load()
+	GameOverState:Load()
 	SlashAnimation:Load()
 	RechargeGaugeManager:Load()
 
@@ -65,6 +75,10 @@ KeyboardHolder = {
 				end
 			end
 		end
+	end,
+
+	SetPressed = function(o,key)
+		o.KeyState[key] = true
 	end,
 }
 
@@ -292,7 +306,7 @@ Character = {
 			direction = direction:normalized()
 			local angle = math.acos(direction:dot(vector(0,1))) * math.sign(direction.x)
 			SlashAnimation:StartAnimation(o.Position,angle )
-			print("angle : " .. angle / (math.pi* 2) * 360)
+			--print("angle : " .. angle / (math.pi* 2) * 360)
 
 			GameplayState:NotifyHit()
 		end
@@ -691,24 +705,6 @@ GameStateManager = {
 	end,
 }
 
-DebugAnimation = {
-	WasPressed = false,
-	Update = function(o)
-		local ns  = love.mouse.isDown("l")
-		if ns and not o.WasPressed then
-			o:onClick()
-		end
-		o.WasPressed = ns
-	end,
-	onClick = function(o)
-		local p = vector(400,400)
-		local position = vector(love.mouse.getX(),love.mouse.getY())
-		local direction = (position - p):normalized()
-		local angle = math.acos(direction:dot(vector(0,-1))) * math.sign(direction.x) 
-		SlashAnimation:StartAnimation(p,angle)
-	end,
-}
-
 GameplayState = {
 	OnStart = function(o)
 		KeyboardHolder:Reset()
@@ -724,7 +720,6 @@ GameplayState = {
 		GamepadHolder:Update(dt)
 		Camera:Update(dt)
 		Character:Update(dt)
-		DebugAnimation:Update(dt)
 		SlashAnimation:Update(dt)
 		ProjectileManager:Update(dt)
 		ProjectileLauncher:Update(dt)
@@ -769,6 +764,13 @@ IntroState = {
 	OnUpdate = function(o)
 		KeyboardHolder:Update()
 		GamepadHolder:Update()
+
+		if love.mouse.isDown("l") then
+			local posX,posY = love.mouse.getX(),love.mouse.getY()
+			if posX > 15 and posX < 100 and posY > 15 and posY < 65 then
+				GameStateManager:SetState("Infos")
+			end
+		end
 	end,
 
 
@@ -778,15 +780,22 @@ IntroState = {
 		love.graphics.draw(o.ControlsImage, (WindowSize[1] - o.ControlsImage:getWidth()) / 2 ,330)
 
 		love.graphics.setColor(255,255,255)
-		love.graphics.print(o.StartText, 300 ,700)
+		love.graphics.print(o.StartText, 230 ,700)
+
+		love.graphics.print("Infos",15,15)
 	end,
 }
 GameStateManager.States["Intro"] = IntroState
 
 GameOverState = {
-	WinMessage = "Congratulation you win this time !",
-	LooseMessage = "I Am the winner of this game ! You loose !",
+	WinMessage =false,
+	LooseMessage = false,
 	
+	Load = function(o)
+		o.WinMessage = BuildStringFromLuaFile("Media.Texts.win")
+		o.LooseMessage = BuildStringFromLuaFile("Media.Texts.loose")
+	end,
+
 	OnStart = function(o)
 		KeyboardHolder:Reset()
 		GamepadHolder:Reset()
@@ -801,10 +810,10 @@ GameOverState = {
 		local endMessage = hasWin and o.WinMessage or o.LooseMessage
 									  
 		love.graphics.setColor(255,255,255)
-		love.graphics.print(endMessage, 250 ,200) 
+		love.graphics.print(endMessage, 170 ,200) 
 
 
-		love.graphics.print("R or Back to go to Title", 300 ,700)
+		love.graphics.print("R or Back to go back in time", 280 ,700)
 
 	end,
 	OnUpdate = function(o)
@@ -813,6 +822,28 @@ GameOverState = {
 	end,
 }
 GameStateManager.States["GameOver"] = GameOverState
+
+InfosState = {
+	InfoText = false,
+	WasSpaceDown = false,
+	Load = function(o)
+		o.InfoText = BuildStringFromLuaFile("Media.Texts.info")
+	end,
+
+	OnUpdate = function(o,dt)
+		if love.keyboard.isDown(" ") and not o.WasSpaceDown then
+			GameStateManager:SetState("Intro")
+			KeyboardHolder:SetPressed(" ")
+		elseif not love.keyboard.isDown(" ") then
+			o.WasSpaceDown = false
+		end
+	end,
+
+	OnDraw = function(o)
+		love.graphics.print(o.InfoText,15,15)
+	end,
+}
+GameStateManager.States["Infos"] = InfosState
 
 love.update = function(dt)
 	if love.keyboard.isDown("escape") then
@@ -824,4 +855,15 @@ end
 
 love.draw = function()
 	GameStateManager:Draw()
+end
+
+BuildStringFromLuaFile = function(fileName)
+	local file = require(fileName)
+	local result = ""
+	if text then
+		for i,line in pairs(text) do
+			result = result .. "\n" .. line
+		end
+	end
+	return result
 end
