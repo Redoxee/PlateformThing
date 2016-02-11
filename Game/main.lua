@@ -749,8 +749,8 @@ IntroState = {
 	StartText = "Press START or SPACE to fight !",
 
 	Load = function(o)
-		o.TitleImage = love.graphics.newImage("Media/JumpSlashJump.png")
-		o.ControlsImage = love.graphics.newImage("Media/Controls.png")
+		o.TitleImage = love.graphics.newImage("Media/jumpslashjump.png")
+		o.ControlsImage = love.graphics.newImage("Media/controls.png")
 	end,
 
 	OnStart = function(o)
@@ -809,8 +809,8 @@ GameOverState = {
 		local hasWin = Character.LifePoint > 0 and ProjectileLauncher.LifePoint < 1 
 		local endMessage = hasWin and o.WinMessage or o.LooseMessage
 									  
-		love.graphics.setColor(255,255,255)
-		love.graphics.print(endMessage, 170 ,200) 
+		love.graphics.setColor(255,255,200)
+		love.graphics.print(endMessage, 130 ,200) 
 
 
 		love.graphics.print("R or Back to go back in time", 280 ,700)
@@ -840,6 +840,7 @@ InfosState = {
 	end,
 
 	OnDraw = function(o)
+		love.graphics.setColor(255,255,200)
 		love.graphics.print(o.InfoText,15,15)
 	end,
 }
